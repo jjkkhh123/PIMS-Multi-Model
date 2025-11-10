@@ -27,6 +27,8 @@ const App: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [activeView, setActiveView] = useState<View>('ALL');
   const [selectedHistoryItem, setSelectedHistoryItem] = useState<HistoryItem | null>(null);
+  const [selectedIncomeMonth, setSelectedIncomeMonth] = useState(new Date());
+  const [selectedExpenseMonth, setSelectedExpenseMonth] = useState(new Date());
 
   // State to manage the conflict resolution modal
   const [conflictData, setConflictData] = useState<{
@@ -187,6 +189,20 @@ const App: React.FC = () => {
   const handleConflictCancel = () => {
     setConflictData(null);
   };
+
+  const handleConflictIgnoreAndAdd = () => {
+    if (!conflictData) return;
+    const { categorizedResult, newHistoryItem } = conflictData;
+
+    // Add new items without removing duplicates, effectively creating duplicate entries
+    setHistory(prevHistory => [newHistoryItem, ...prevHistory]);
+    setContacts(prev => [...prev, ...categorizedResult.contacts]);
+    setSchedule(prev => [...prev, ...categorizedResult.schedule]);
+    setExpenses(prev => [...prev, ...categorizedResult.expenses]);
+    setDiary(prev => [...prev, ...categorizedResult.diary]);
+
+    setConflictData(null);
+  };
   
   // CRUD Handlers for Contacts
   const handleAddContact = (contact: Omit<Contact, 'id'>) => {
@@ -262,25 +278,122 @@ const App: React.FC = () => {
         case 'EXPENSES_INCOME': {
             title = '수입 내역';
             const incomeItems = expenses.filter(e => e.type === 'income');
-            content = incomeItems.length > 0 ? (
-                <ExpensesList 
-                    expenses={incomeItems} 
-                    onUpdate={handleUpdateExpense}
-                    onDelete={handleDeleteExpense}
-                />
-            ) : <p className="text-gray-400 text-center mt-8">데이터가 없습니다.</p>;
+            
+            const handleIncomeMonthChange = (offset: number) => {
+                setSelectedIncomeMonth(prev => new Date(prev.getFullYear(), prev.getMonth() + offset, 1));
+            };
+
+            const now = new Date();
+            const isNextMonthInFuture = selectedIncomeMonth.getFullYear() > now.getFullYear() || 
+                                       (selectedIncomeMonth.getFullYear() === now.getFullYear() && selectedIncomeMonth.getMonth() >= now.getMonth());
+
+            const filteredIncomeItems = incomeItems.filter(item => {
+                const itemDate = new Date(item.date);
+                return itemDate.getFullYear() === selectedIncomeMonth.getFullYear() &&
+                       itemDate.getMonth() === selectedIncomeMonth.getMonth();
+            }).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+            const totalIncomeForMonth = filteredIncomeItems.reduce((sum, expense) => sum + expense.amount, 0);
+
+            content = (
+              <div className="flex flex-col h-full">
+                {/* Summary section */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
+                  <div className="bg-gray-700/50 p-4 rounded-lg flex items-center justify-center">
+                    <button onClick={() => handleIncomeMonthChange(-1)} className="px-3 py-1 bg-gray-600 rounded hover:bg-gray-500">&lt;</button>
+                    <h3 className="text-lg font-bold text-white mx-4 w-48 text-center" style={{minWidth: '12rem'}}>
+                      {selectedIncomeMonth.toLocaleString('ko-KR', { month: 'long', year: 'numeric' })}
+                    </h3>
+                    <button onClick={() => handleIncomeMonthChange(1)} disabled={isNextMonthInFuture} className="px-3 py-1 bg-gray-600 rounded hover:bg-gray-500 disabled:opacity-50 disabled:cursor-not-allowed">&gt;</button>
+                  </div>
+                  <div className="bg-gray-700/50 p-4 rounded-lg">
+                    <h3 className="text-sm font-medium text-gray-400">해당 월 총 수입</h3>
+                    <p className="text-2xl font-bold text-green-400 mt-1">
+                      {totalIncomeForMonth.toLocaleString('ko-KR')}원
+                    </p>
+                  </div>
+                </div>
+
+                {/* History section */}
+                <div className="flex-grow flex flex-col bg-gray-700/30 p-4 rounded-lg min-h-0">
+                  <h3 className="text-lg font-semibold mb-3 text-cyan-300">수입 내역 기록</h3>
+                  <div className="flex-grow overflow-y-auto pr-2">
+                    {filteredIncomeItems.length > 0 ? (
+                      <ExpensesList 
+                          expenses={filteredIncomeItems} 
+                          onUpdate={handleUpdateExpense}
+                          onDelete={handleDeleteExpense}
+                      />
+                    ) : (
+                      <div className="flex items-center justify-center h-full">
+                        <p className="text-gray-500">해당 월의 수입 내역이 없습니다.</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            );
             break;
         }
         case 'EXPENSES_EXPENSE': {
             title = '지출 내역';
             const expenseItems = expenses.filter(e => e.type === 'expense');
-            content = expenseItems.length > 0 ? (
-                <ExpensesList 
-                    expenses={expenseItems} 
-                    onUpdate={handleUpdateExpense}
-                    onDelete={handleDeleteExpense}
-                />
-            ) : <p className="text-gray-400 text-center mt-8">데이터가 없습니다.</p>;
+            
+            const handleExpenseMonthChange = (offset: number) => {
+                setSelectedExpenseMonth(prev => new Date(prev.getFullYear(), prev.getMonth() + offset, 1));
+            };
+
+            const now = new Date();
+            const isNextMonthInFuture = selectedExpenseMonth.getFullYear() > now.getFullYear() || 
+                                       (selectedExpenseMonth.getFullYear() === now.getFullYear() && selectedExpenseMonth.getMonth() >= now.getMonth());
+
+            const filteredExpenseItems = expenseItems.filter(item => {
+                const itemDate = new Date(item.date);
+                return itemDate.getFullYear() === selectedExpenseMonth.getFullYear() &&
+                       itemDate.getMonth() === selectedExpenseMonth.getMonth();
+            }).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+            const totalExpenseForMonth = filteredExpenseItems.reduce((sum, expense) => sum + expense.amount, 0);
+
+
+            content = (
+              <div className="flex flex-col h-full">
+                {/* Summary section */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
+                  <div className="bg-gray-700/50 p-4 rounded-lg flex items-center justify-center">
+                    <button onClick={() => handleExpenseMonthChange(-1)} className="px-3 py-1 bg-gray-600 rounded hover:bg-gray-500">&lt;</button>
+                     <h3 className="text-lg font-bold text-white mx-4 w-48 text-center" style={{minWidth: '12rem'}}>
+                      {selectedExpenseMonth.toLocaleString('ko-KR', { month: 'long', year: 'numeric' })}
+                    </h3>
+                    <button onClick={() => handleExpenseMonthChange(1)} disabled={isNextMonthInFuture} className="px-3 py-1 bg-gray-600 rounded hover:bg-gray-500 disabled:opacity-50 disabled:cursor-not-allowed">&gt;</button>
+                  </div>
+                  <div className="bg-gray-700/50 p-4 rounded-lg">
+                    <h3 className="text-sm font-medium text-gray-400">해당 월 총 지출</h3>
+                    <p className="text-2xl font-bold text-red-400 mt-1">
+                      {totalExpenseForMonth.toLocaleString('ko-KR')}원
+                    </p>
+                  </div>
+                </div>
+
+                {/* History section */}
+                <div className="flex-grow flex flex-col bg-gray-700/30 p-4 rounded-lg min-h-0">
+                  <h3 className="text-lg font-semibold mb-3 text-cyan-300">지출 내역 기록</h3>
+                  <div className="flex-grow overflow-y-auto pr-2">
+                    {filteredExpenseItems.length > 0 ? (
+                      <ExpensesList 
+                          expenses={filteredExpenseItems} 
+                          onUpdate={handleUpdateExpense}
+                          onDelete={handleDeleteExpense}
+                      />
+                    ) : (
+                      <div className="flex items-center justify-center h-full">
+                        <p className="text-gray-500">해당 월의 지출 내역이 없습니다.</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            );
             break;
         }
         case 'EXPENSES_STATS':
@@ -305,7 +418,7 @@ const App: React.FC = () => {
         <div className="flex-grow p-6" style={{ height: '100vh' }}>
             <div className="h-full flex flex-col bg-gray-900/50 p-6 rounded-lg shadow-lg">
                 <h1 className="text-2xl font-bold mb-4 text-cyan-400">{title}</h1>
-                <div className="flex-grow overflow-y-auto pr-2">
+                <div className="flex-grow overflow-y-auto pr-2 min-h-0">
                     {content}
                 </div>
             </div>
@@ -330,6 +443,7 @@ const App: React.FC = () => {
           conflicts={conflictData.conflicts}
           onConfirm={handleConflictConfirm}
           onCancel={handleConflictCancel}
+          onIgnore={handleConflictIgnoreAndAdd}
         />
       )}
     </div>
