@@ -1,7 +1,7 @@
-
 import React, { useState } from 'react';
 import { ScheduleItem } from '../types.ts';
 import { ClockIcon } from './icons.tsx';
+import { MonthYearPicker } from './MonthYearPicker.tsx';
 
 interface CalendarViewProps {
   scheduleItems: ScheduleItem[];
@@ -46,15 +46,21 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ scheduleItems }) => 
   const changeMonth = (offset: number) => {
     setCurrentDate(prev => new Date(prev.getFullYear(), prev.getMonth() + offset, 1));
   };
+  
+  const handleDateSelect = (date: Date) => {
+    setCurrentDate(date);
+  };
 
   return (
     <section>
-       <div className="flex items-center justify-between mb-4">
-        <button onClick={() => changeMonth(-1)} className="px-3 py-1 bg-gray-700 rounded hover:bg-gray-600">&lt;</button>
-        <h2 className="text-xl font-bold text-white">
-          {currentDate.toLocaleString('ko-KR', { month: 'long', year: 'numeric' })}
-        </h2>
-        <button onClick={() => changeMonth(1)} className="px-3 py-1 bg-gray-700 rounded hover:bg-gray-600">&gt;</button>
+       <div className="flex items-center justify-center mb-4">
+        <button onClick={() => changeMonth(-1)} className="px-3 py-1 bg-gray-600 rounded hover:bg-gray-500" aria-label="이전 달">&lt;</button>
+        <MonthYearPicker
+            selectedDate={currentDate}
+            onChange={handleDateSelect}
+            disableFutureDates={false}
+        />
+        <button onClick={() => changeMonth(1)} className="px-3 py-1 bg-gray-600 rounded hover:bg-gray-500" aria-label="다음 달">&gt;</button>
       </div>
       <div className="grid grid-cols-7">
         {['일', '월', '화', '수', '목', '금', '토'].map(day => (

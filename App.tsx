@@ -11,7 +11,8 @@ import { ExpensesList } from './components/ExpensesList';
 import { DiaryList } from './components/DiaryList';
 import { HistoryDetailModal } from './components/HistoryDetailModal';
 import { ConflictModal } from './components/ConflictModal';
-import { ExpenseIcon } from './components/icons';
+import { MonthYearPicker } from './components/MonthYearPicker';
+import { ExpensesCalendarView } from './components/ExpensesCalendarView';
 
 // A simple ID generator
 const generateId = () => Math.random().toString(36).substring(2, 9);
@@ -273,7 +274,7 @@ const App: React.FC = () => {
             break;
         case 'EXPENSES_DASHBOARD':
             title = '가계부 대시보드';
-            content = <p className="text-gray-400 text-center mt-8">대시보드 기능은 곧 제공될 예정입니다.</p>;
+            content = <ExpensesCalendarView expenses={expenses} />;
             break;
         case 'EXPENSES_INCOME': {
             title = '수입 내역';
@@ -281,6 +282,14 @@ const App: React.FC = () => {
             
             const handleIncomeMonthChange = (offset: number) => {
                 setSelectedIncomeMonth(prev => new Date(prev.getFullYear(), prev.getMonth() + offset, 1));
+            };
+            
+            const handleIncomeDateSelect = (date: Date) => {
+                const now = new Date();
+                if (date.getFullYear() > now.getFullYear() || (date.getFullYear() === now.getFullYear() && date.getMonth() > now.getMonth())) {
+                    return;
+                }
+                setSelectedIncomeMonth(date);
             };
 
             const now = new Date();
@@ -301,9 +310,10 @@ const App: React.FC = () => {
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
                   <div className="bg-gray-700/50 p-4 rounded-lg flex items-center justify-center">
                     <button onClick={() => handleIncomeMonthChange(-1)} className="px-3 py-1 bg-gray-600 rounded hover:bg-gray-500">&lt;</button>
-                    <h3 className="text-lg font-bold text-white mx-4 w-48 text-center" style={{minWidth: '12rem'}}>
-                      {selectedIncomeMonth.toLocaleString('ko-KR', { month: 'long', year: 'numeric' })}
-                    </h3>
+                    <MonthYearPicker
+                        selectedDate={selectedIncomeMonth}
+                        onChange={handleIncomeDateSelect}
+                    />
                     <button onClick={() => handleIncomeMonthChange(1)} disabled={isNextMonthInFuture} className="px-3 py-1 bg-gray-600 rounded hover:bg-gray-500 disabled:opacity-50 disabled:cursor-not-allowed">&gt;</button>
                   </div>
                   <div className="bg-gray-700/50 p-4 rounded-lg">
@@ -343,6 +353,14 @@ const App: React.FC = () => {
                 setSelectedExpenseMonth(prev => new Date(prev.getFullYear(), prev.getMonth() + offset, 1));
             };
 
+            const handleExpenseDateSelect = (date: Date) => {
+                const now = new Date();
+                if (date.getFullYear() > now.getFullYear() || (date.getFullYear() === now.getFullYear() && date.getMonth() > now.getMonth())) {
+                    return;
+                }
+                setSelectedExpenseMonth(date);
+            };
+
             const now = new Date();
             const isNextMonthInFuture = selectedExpenseMonth.getFullYear() > now.getFullYear() || 
                                        (selectedExpenseMonth.getFullYear() === now.getFullYear() && selectedExpenseMonth.getMonth() >= now.getMonth());
@@ -362,9 +380,10 @@ const App: React.FC = () => {
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
                   <div className="bg-gray-700/50 p-4 rounded-lg flex items-center justify-center">
                     <button onClick={() => handleExpenseMonthChange(-1)} className="px-3 py-1 bg-gray-600 rounded hover:bg-gray-500">&lt;</button>
-                     <h3 className="text-lg font-bold text-white mx-4 w-48 text-center" style={{minWidth: '12rem'}}>
-                      {selectedExpenseMonth.toLocaleString('ko-KR', { month: 'long', year: 'numeric' })}
-                    </h3>
+                     <MonthYearPicker
+                        selectedDate={selectedExpenseMonth}
+                        onChange={handleExpenseDateSelect}
+                    />
                     <button onClick={() => handleExpenseMonthChange(1)} disabled={isNextMonthInFuture} className="px-3 py-1 bg-gray-600 rounded hover:bg-gray-500 disabled:opacity-50 disabled:cursor-not-allowed">&gt;</button>
                   </div>
                   <div className="bg-gray-700/50 p-4 rounded-lg">
