@@ -57,3 +57,15 @@ export interface HistoryItem {
   };
   output: CategorizedData;
 }
+
+export interface ChatMessage {
+  id: string;
+  role: 'user' | 'model';
+  text: string;
+  imageUrl?: string | null;
+}
+
+export interface ConversationalResponse {
+  answer: string;
+  dataExtraction: ProcessedData;
+}

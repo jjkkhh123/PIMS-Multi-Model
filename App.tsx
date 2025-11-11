@@ -1,8 +1,7 @@
-import React, { useState } from 'react';
-import { InputArea } from './components/InputArea';
+import React, { useState, useEffect } from 'react';
 import { Sidebar } from './components/Sidebar';
-import { processUserInput } from './services/geminiService';
-import type { ProcessedData, CategorizedData, HistoryItem, View, Expense, Contact, ScheduleItem, DiaryEntry } from './types';
+import { processChat } from './services/geminiService';
+import type { ProcessedData, CategorizedData, HistoryItem, View, Expense, Contact, ScheduleItem, DiaryEntry, ChatMessage } from './types';
 import { HistoryList } from './components/HistoryList';
 import { CalendarView } from './components/CalendarView';
 import { ContactsList } from './components/ContactsList';
@@ -13,6 +12,7 @@ import { HistoryDetailModal } from './components/HistoryDetailModal';
 import { ConflictModal } from './components/ConflictModal';
 import { MonthYearPicker } from './components/MonthYearPicker';
 import { ExpensesCalendarView } from './components/ExpensesCalendarView';
+import { ChatInterface } from './components/ChatInterface';
 
 // A simple ID generator
 const generateId = () => Math.random().toString(36).substring(2, 9);
@@ -23,6 +23,7 @@ const App: React.FC = () => {
   const [schedule, setSchedule] = useState<ScheduleItem[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [diary, setDiary] = useState<DiaryEntry[]>([]);
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -47,6 +48,16 @@ const App: React.FC = () => {
     newHistoryItem: HistoryItem;
   } | null>(null);
 
+  useEffect(() => {
+    // Add an initial greeting from the AI when the component mounts
+    setChatMessages([
+      {
+        id: generateId(),
+        role: 'model',
+        text: '안녕하세요! LifeOS입니다. 무엇을 도와드릴까요? 일정, 메모, 연락처, 가계부 내역 등을 말씀해주세요. 또는 "이번 달 지출 내역 보여줘" 와 같이 질문할 수도 있습니다.',
+      }
+    ]);
+  }, []);
 
   const addIdsToData = (data: ProcessedData): CategorizedData => {
     return {
@@ -57,29 +68,7 @@ const App: React.FC = () => {
     };
   };
 
-  const handleProcess = async (text: string, image: File | null) => {
-    setIsLoading(true);
-    setError(null);
-
-    try {
-      let imageUrl: string | null = null;
-      if (image) {
-        imageUrl = await new Promise<string>((resolve) => {
-          const reader = new FileReader();
-          reader.onloadend = () => resolve(reader.result as string);
-          reader.readAsDataURL(image);
-        });
-      }
-
-      const result = await processUserInput(text, image);
-      const categorizedResult = addIdsToData(result);
-      
-      if (imageUrl && categorizedResult.expenses.length > 0) {
-        categorizedResult.expenses.forEach(expense => {
-          expense.imageUrl = imageUrl;
-        });
-      }
-      
+  const addDataToState = (categorizedResult: CategorizedData, input: HistoryItem['input']) => {
       // --- DUPLICATION CHECK LOGIC ---
       const conflicts = {
         contacts: [] as Contact[],
@@ -96,7 +85,6 @@ const App: React.FC = () => {
 
       categorizedResult.contacts.forEach(newContact => {
         const newPhoneNormalized = normalizePhone(newContact.phone);
-        // Only check for duplicates if a non-empty phone number is present.
         if (newPhoneNormalized) {
           const existing = contacts.find(c => normalizePhone(c.phone) === newPhoneNormalized);
           if (existing) {
@@ -135,7 +123,7 @@ const App: React.FC = () => {
       const newHistoryItem: HistoryItem = {
         id: generateId(),
         timestamp: new Date().toISOString(),
-        input: { text, imageName: image?.name || null, imageUrl },
+        input,
         output: categorizedResult,
       };
 
@@ -155,13 +143,81 @@ const App: React.FC = () => {
       setSchedule(prev => [...prev, ...categorizedResult.schedule]);
       setExpenses(prev => [...prev, ...categorizedResult.expenses]);
       setDiary(prev => [...prev, ...categorizedResult.diary]);
+  };
+
+  const handleSendMessage = async (text: string, image: File | null) => {
+    setIsLoading(true);
+    setError(null);
+
+    let imageUrl: string | null = null;
+    if (image) {
+      imageUrl = await new Promise<string>((resolve) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result as string);
+        reader.readAsDataURL(image);
+      });
+    }
+    
+    const userMessage: ChatMessage = {
+      id: generateId(),
+      role: 'user',
+      text,
+      imageUrl,
+    };
+    setChatMessages(prev => [...prev, userMessage]);
+
+    try {
+      const contextData = { contacts, schedule, expenses, diary };
+      const result = await processChat(text, image, contextData);
+      
+      if (result.answer) {
+        const modelMessage: ChatMessage = {
+          id: generateId(),
+          role: 'model',
+          text: result.answer,
+        };
+        setChatMessages(prev => [...prev, modelMessage]);
+      }
+
+      const extractedData = result.dataExtraction;
+      const hasExtractedData = 
+        extractedData.contacts.length > 0 ||
+        extractedData.schedule.length > 0 ||
+        extractedData.expenses.length > 0 ||
+        extractedData.diary.length > 0;
+
+      if (hasExtractedData) {
+        const categorizedResult = addIdsToData(extractedData);
+
+        if (imageUrl && categorizedResult.expenses.length > 0) {
+          categorizedResult.expenses.forEach(expense => {
+            expense.imageUrl = imageUrl;
+          });
+        }
+        
+        const userInputLog: HistoryItem['input'] = {
+          text,
+          imageName: image?.name || null,
+          imageUrl,
+        };
+        
+        addDataToState(categorizedResult, userInputLog);
+      }
 
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'An unknown error occurred.');
+      const errorMessage = e instanceof Error ? e.message : '알 수 없는 오류가 발생했습니다.';
+      setError(errorMessage);
+      const errorMessageItem: ChatMessage = {
+        id: generateId(),
+        role: 'model',
+        text: `오류가 발생했습니다: ${errorMessage}`,
+      };
+      setChatMessages(prev => [...prev, errorMessageItem]);
     } finally {
       setIsLoading(false);
     }
   };
+
 
   const handleConflictConfirm = () => {
     if (!conflictData) return;
@@ -232,14 +288,11 @@ const App: React.FC = () => {
   const renderContent = () => {
     if (activeView === 'ALL') {
       return (
-        <div className="flex-grow flex items-center justify-center p-6" style={{ height: '100vh' }}>
-          <div className="w-full max-w-2xl flex flex-col bg-gray-900/50 p-8 rounded-lg shadow-lg" style={{minHeight: '500px'}}>
-            <h1 className="text-3xl font-bold mb-2 text-cyan-400 text-center">LifeOS</h1>
-            <p className="text-gray-400 mb-8 text-center">당신의 삶의 모든 것을 한 곳에서 관리하세요.</p>
-            {error && <div className="text-red-400 bg-red-900/50 p-3 rounded-md mb-4">{error}</div>}
-            <InputArea onProcess={handleProcess} isLoading={isLoading} />
-          </div>
-        </div>
+        <ChatInterface 
+          messages={chatMessages}
+          onSendMessage={handleSendMessage}
+          isLoading={isLoading}
+        />
       );
     }
 
@@ -434,7 +487,7 @@ const App: React.FC = () => {
             break;
     }
      return (
-        <div className="flex-grow p-6" style={{ height: '100vh' }}>
+        <div className="flex-grow p-6 h-full">
             <div className="h-full flex flex-col bg-gray-900/50 p-6 rounded-lg shadow-lg">
                 <h1 className="text-2xl font-bold mb-4 text-cyan-400">{title}</h1>
                 <div className="flex-grow overflow-y-auto pr-2 min-h-0">
@@ -446,9 +499,9 @@ const App: React.FC = () => {
   };
 
   return (
-    <div className="bg-gray-800 text-gray-100 font-sans min-h-screen flex">
+    <div className="bg-gray-800 text-gray-100 font-sans h-screen flex">
       <Sidebar activeView={activeView} onViewChange={setActiveView} />
-      <main className="flex-grow">
+      <main className="flex-grow h-full">
         {renderContent()}
       </main>
       {selectedHistoryItem && (
