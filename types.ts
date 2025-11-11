@@ -65,6 +65,12 @@ export interface ChatMessage {
   imageUrl?: string | null;
 }
 
+export interface ChatSession {
+  id: string;
+  title: string;
+  messages: ChatMessage[];
+}
+
 export interface ConversationalResponse {
   answer: string;
   dataExtraction: ProcessedData;

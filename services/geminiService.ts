@@ -1,5 +1,5 @@
 import { GoogleGenAI, Type } from "@google/genai";
-import type { ProcessedData, ConversationalResponse, Contact, ScheduleItem, Expense, DiaryEntry } from "../types.ts";
+import type { ProcessedData, ConversationalResponse, Contact, ScheduleItem, Expense, DiaryEntry, ChatMessage } from "../types.ts";
 
 // Do not overuse this. The user is in Korea.
 const getSystemInstruction = (contextData: object) => `You are an intelligent personal assistant, LifeOS. Your task is to analyze the user's input (text and/or images) and their existing data to provide a helpful response. The user is Korean. Today's date is ${new Date().toISOString().split('T')[0]}.
@@ -104,6 +104,7 @@ const fileToGenerativePart = async (file: File) => {
 };
 
 export const processChat = async (
+  chatHistory: ChatMessage[],
   text: string, 
   image: File | null,
   contextData: {
@@ -116,26 +117,34 @@ export const processChat = async (
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   const model = "gemini-2.5-flash";
 
-  const parts: any[] = [];
+  // Note: This simplified history mapping doesn't include images from past messages.
+  const contents = chatHistory.map(msg => ({
+    role: msg.role,
+    parts: [{ text: msg.text }],
+  }));
+
+  const newParts: any[] = [];
   if (image) {
     const imagePart = await fileToGenerativePart(image);
-    parts.push(imagePart);
+    newParts.push(imagePart);
   }
   if (text) {
-    parts.push({ text });
+    newParts.push({ text });
   }
 
-  if (parts.length === 0) {
+  if (newParts.length === 0) {
     return { 
       answer: "입력된 내용이 없습니다.", 
       dataExtraction: { contacts: [], schedule: [], expenses: [], diary: [] } 
     };
   }
 
+  contents.push({ role: 'user', parts: newParts });
+
   try {
     const response = await ai.models.generateContent({
       model: model,
-      contents: { parts: parts },
+      contents: contents,
       config: {
         responseMimeType: "application/json",
         responseSchema: schema,
@@ -146,10 +155,18 @@ export const processChat = async (
     const jsonText = response.text.trim();
     const data = JSON.parse(jsonText) as ConversationalResponse;
     
-    // Basic validation
+    // Validate the structure of the returned data to prevent runtime errors.
+    // Fix: Explicitly type `extraction` to handle cases where `data.dataExtraction` is null or properties are missing from the API response.
+    const extraction: Partial<ProcessedData> = data.dataExtraction || {};
+
     return {
         answer: data.answer || '',
-        dataExtraction: data.dataExtraction || { contacts: [], schedule: [], expenses: [], diary: [] }
+        dataExtraction: {
+          contacts: extraction.contacts || [],
+          schedule: extraction.schedule || [],
+          expenses: extraction.expenses || [],
+          diary: extraction.diary || [],
+        }
     };
 
   } catch (error) {

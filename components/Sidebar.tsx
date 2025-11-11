@@ -1,10 +1,14 @@
 import React, { useState, useEffect } from 'react';
-import { View } from '../types';
-import { HomeIcon, CalendarIcon, ExpenseIcon, ContactIcon, DiaryIcon, HistoryIcon, AppIcon, ChevronRightIcon, TransactionIcon, StatsIcon } from './icons';
+import { View, ChatSession } from '../types';
+import { HomeIcon, CalendarIcon, ExpenseIcon, ContactIcon, DiaryIcon, HistoryIcon, AppIcon, ChevronRightIcon, TransactionIcon, StatsIcon, AddIcon } from './icons';
 
 interface SidebarProps {
   activeView: View;
   onViewChange: (view: View) => void;
+  chatSessions: ChatSession[];
+  activeChatSessionId: string | 'new';
+  onSelectChat: (id: string) => void;
+  onNewChat: () => void;
 }
 
 // A recursive type definition for menu items to satisfy TypeScript
@@ -17,7 +21,7 @@ type MenuItem = {
 
 
 const menuItems: readonly MenuItem[] = [
-  { id: 'ALL', label: '메인 화면', icon: HomeIcon },
+  // { id: 'ALL', label: '메인 화면', icon: HomeIcon }, // Replaced by New Chat button and history
   { id: 'HISTORY', label: '처리 내역', icon: HistoryIcon },
   {
     id: 'APP_GROUP',
@@ -43,7 +47,14 @@ const menuItems: readonly MenuItem[] = [
 ];
 
 
-export const Sidebar: React.FC<SidebarProps> = ({ activeView, onViewChange }) => {
+export const Sidebar: React.FC<SidebarProps> = ({ 
+  activeView, 
+  onViewChange, 
+  chatSessions, 
+  activeChatSessionId, 
+  onSelectChat, 
+  onNewChat 
+}) => {
   const findParent = (items: readonly MenuItem[], childId: View): MenuItem | undefined => {
     for (const item of items) {
         if (item.subItems?.some(sub => sub.id === childId)) {
@@ -77,17 +88,20 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeView, onViewChange }) =>
   });
 
   useEffect(() => {
-    const parentIds = getParentIds(activeView);
-    const newOpenMenus = { ...openMenus };
-    let changed = false;
-    parentIds.forEach(id => {
-      if (!newOpenMenus[id]) {
-        newOpenMenus[id] = true;
-        changed = true;
-      }
-    });
-    if (changed) {
-      setOpenMenus(newOpenMenus);
+    // Don't auto-open menus when switching between chats
+    if (activeView !== 'ALL') {
+        const parentIds = getParentIds(activeView);
+        const newOpenMenus = { ...openMenus };
+        let changed = false;
+        parentIds.forEach(id => {
+          if (!newOpenMenus[id]) {
+            newOpenMenus[id] = true;
+            changed = true;
+          }
+        });
+        if (changed) {
+          setOpenMenus(newOpenMenus);
+        }
     }
   }, [activeView]);
 
@@ -154,6 +168,42 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeView, onViewChange }) =>
         <h1 className="text-3xl font-bold text-white">LifeOS</h1>
       </div>
       <nav className="flex flex-col gap-1">
+        <button
+          onClick={onNewChat}
+          className={`w-full flex items-center gap-3 py-2 px-3 rounded-md text-sm font-medium transition-colors text-left border ${
+            activeView === 'ALL' && activeChatSessionId === 'new'
+              ? 'bg-cyan-600 text-white border-cyan-500'
+              : 'text-gray-300 hover:bg-gray-700/50 hover:text-white border-gray-600'
+          }`}
+        >
+          <AddIcon className="h-5 w-5" />
+          <span>새 대화</span>
+        </button>
+
+        {/* Chat History */}
+        {chatSessions.length > 0 && (
+          <div className="mt-2 space-y-1">
+             <h3 className="px-3 text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">대화 기록</h3>
+            {chatSessions.map(session => (
+              <button
+                key={session.id}
+                onClick={() => onSelectChat(session.id)}
+                className={`w-full text-left truncate py-2 px-3 rounded-md text-sm transition-colors ${
+                  activeView === 'ALL' && activeChatSessionId === session.id
+                    ? 'bg-gray-700 text-white font-medium'
+                    : 'text-gray-400 hover:bg-gray-700/50 hover:text-white'
+                }`}
+                title={session.title}
+              >
+                {session.title}
+              </button>
+            ))}
+          </div>
+        )}
+
+        <div className="my-2 border-t border-gray-700/50"></div>
+
+        {/* Other menu items */}
         {renderMenuItems(menuItems)}
       </nav>
     </aside>

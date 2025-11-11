@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { processChat } from './services/geminiService';
-import type { ProcessedData, CategorizedData, HistoryItem, View, Expense, Contact, ScheduleItem, DiaryEntry, ChatMessage } from './types';
+import type { ProcessedData, CategorizedData, HistoryItem, View, Expense, Contact, ScheduleItem, DiaryEntry, ChatMessage, ChatSession } from './types';
 import { HistoryList } from './components/HistoryList';
 import { CalendarView } from './components/CalendarView';
 import { ContactsList } from './components/ContactsList';
@@ -23,7 +23,9 @@ const App: React.FC = () => {
   const [schedule, setSchedule] = useState<ScheduleItem[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [diary, setDiary] = useState<DiaryEntry[]>([]);
-  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  
+  const [chatSessions, setChatSessions] = useState<ChatSession[]>([]);
+  const [activeChatSessionId, setActiveChatSessionId] = useState<string | 'new'>('new');
   
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -48,16 +50,13 @@ const App: React.FC = () => {
     newHistoryItem: HistoryItem;
   } | null>(null);
 
-  useEffect(() => {
-    // Add an initial greeting from the AI when the component mounts
-    setChatMessages([
-      {
-        id: generateId(),
-        role: 'model',
-        text: '안녕하세요! LifeOS입니다. 무엇을 도와드릴까요? 일정, 메모, 연락처, 가계부 내역 등을 말씀해주세요. 또는 "이번 달 지출 내역 보여줘" 와 같이 질문할 수도 있습니다.',
-      }
-    ]);
-  }, []);
+  const initialMessages: ChatMessage[] = [
+    {
+      id: generateId(),
+      role: 'model',
+      text: '안녕하세요! LifeOS입니다. 무엇을 도와드릴까요? 일정, 메모, 연락처, 가계부 내역 등을 말씀해주세요. 또는 "이번 달 지출 내역 보여줘" 와 같이 질문할 수도 있습니다.',
+    }
+  ];
 
   const addIdsToData = (data: ProcessedData): CategorizedData => {
     return {
@@ -164,20 +163,51 @@ const App: React.FC = () => {
       text,
       imageUrl,
     };
-    setChatMessages(prev => [...prev, userMessage]);
+    
+    let currentSessionId = activeChatSessionId;
+    let chatHistoryForApi: ChatMessage[] = [];
+
+    if (currentSessionId === 'new') {
+        const newSessionId = generateId();
+        const newSession: ChatSession = {
+            id: newSessionId,
+            title: text.substring(0, 30) || image?.name || "새 대화",
+            messages: [userMessage],
+        };
+        setChatSessions(prev => [newSession, ...prev]);
+        setActiveChatSessionId(newSessionId);
+        currentSessionId = newSessionId;
+    } else {
+        const session = chatSessions.find(s => s.id === currentSessionId)!;
+        chatHistoryForApi = [...session.messages];
+        const updatedSession = { ...session, messages: [...session.messages, userMessage] };
+        setChatSessions(prev => prev.map(s => s.id === currentSessionId ? updatedSession : s));
+    }
+
 
     try {
       const contextData = { contacts, schedule, expenses, diary };
-      const result = await processChat(text, image, contextData);
+      const result = await processChat(chatHistoryForApi, text, image, contextData);
       
+      let modelMessage: ChatMessage | null = null;
       if (result.answer) {
-        const modelMessage: ChatMessage = {
+        modelMessage = {
           id: generateId(),
           role: 'model',
           text: result.answer,
         };
-        setChatMessages(prev => [...prev, modelMessage]);
       }
+
+      setChatSessions(prev => prev.map(s => {
+        if (s.id === currentSessionId) {
+            const newMessages = [...s.messages];
+            if (modelMessage) {
+                newMessages.push(modelMessage);
+            }
+            return { ...s, messages: newMessages };
+        }
+        return s;
+      }));
 
       const extractedData = result.dataExtraction;
       const hasExtractedData = 
@@ -212,10 +242,25 @@ const App: React.FC = () => {
         role: 'model',
         text: `오류가 발생했습니다: ${errorMessage}`,
       };
-      setChatMessages(prev => [...prev, errorMessageItem]);
+      setChatSessions(prev => prev.map(s => {
+        if (s.id === currentSessionId) {
+            return { ...s, messages: [...s.messages, errorMessageItem] };
+        }
+        return s;
+      }));
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const handleNewChat = () => {
+    setActiveView('ALL');
+    setActiveChatSessionId('new');
+  };
+
+  const handleSelectChat = (sessionId: string) => {
+    setActiveView('ALL');
+    setActiveChatSessionId(sessionId);
   };
 
 
@@ -287,9 +332,16 @@ const App: React.FC = () => {
 
   const renderContent = () => {
     if (activeView === 'ALL') {
+       let messagesToShow: ChatMessage[];
+      if (activeChatSessionId === 'new') {
+        messagesToShow = initialMessages;
+      } else {
+        const activeSession = chatSessions.find(s => s.id === activeChatSessionId);
+        messagesToShow = activeSession ? activeSession.messages : initialMessages;
+      }
       return (
         <ChatInterface 
-          messages={chatMessages}
+          messages={messagesToShow}
           onSendMessage={handleSendMessage}
           isLoading={isLoading}
         />
@@ -500,7 +552,14 @@ const App: React.FC = () => {
 
   return (
     <div className="bg-gray-800 text-gray-100 font-sans h-screen flex">
-      <Sidebar activeView={activeView} onViewChange={setActiveView} />
+      <Sidebar 
+        activeView={activeView} 
+        onViewChange={setActiveView}
+        chatSessions={chatSessions}
+        activeChatSessionId={activeChatSessionId}
+        onSelectChat={handleSelectChat}
+        onNewChat={handleNewChat}
+      />
       <main className="flex-grow h-full">
         {renderContent()}
       </main>
