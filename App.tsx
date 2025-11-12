@@ -13,6 +13,7 @@ import { ConflictModal } from './components/ConflictModal';
 import { MonthYearPicker } from './components/MonthYearPicker';
 import { ExpensesCalendarView } from './components/ExpensesCalendarView';
 import { ChatInterface } from './components/ChatInterface';
+import { ExpensesStatsView } from './components/ExpensesStatsView';
 
 // A simple ID generator
 const generateId = () => Math.random().toString(36).substring(2, 9);
@@ -33,6 +34,10 @@ const App: React.FC = () => {
   const [selectedHistoryItem, setSelectedHistoryItem] = useState<HistoryItem | null>(null);
   const [selectedIncomeMonth, setSelectedIncomeMonth] = useState(new Date());
   const [selectedExpenseMonth, setSelectedExpenseMonth] = useState(new Date());
+  
+  // State to hold the original user input when AI asks for clarification
+  const [pendingClarificationInput, setPendingClarificationInput] = useState<HistoryItem['input'] | null>(null);
+
 
   // State to manage the conflict resolution modal
   const [conflictData, setConflictData] = useState<{
@@ -60,10 +65,10 @@ const App: React.FC = () => {
 
   const addIdsToData = (data: ProcessedData): CategorizedData => {
     return {
-      contacts: data.contacts.map(c => ({ ...c, id: generateId() })),
+      contacts: data.contacts.map(c => ({ ...c, id: generateId(), group: c.group || '기타' })),
       schedule: data.schedule.map(s => ({ ...s, id: generateId() })),
       expenses: data.expenses.map(e => ({ ...e, id: generateId() })),
-      diary: data.diary.map(d => ({ ...d, id: generateId() })),
+      diary: data.diary.map(d => ({ ...d, id: generateId(), group: d.group || '기타' })),
     };
   };
 
@@ -139,9 +144,44 @@ const App: React.FC = () => {
       // If no conflicts, update state directly
       setHistory(prevHistory => [newHistoryItem, ...prevHistory]);
       setContacts(prev => [...prev, ...categorizedResult.contacts]);
-      setSchedule(prev => [...prev, ...categorizedResult.schedule]);
+      setSchedule(prev => [...prev, ...categorizedResult.schedule].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime() || (a.time || '').localeCompare(b.time || '')));
       setExpenses(prev => [...prev, ...categorizedResult.expenses]);
       setDiary(prev => [...prev, ...categorizedResult.diary]);
+  };
+
+  const getPrunedContextData = () => {
+    const MAX_CONTACTS_LITE = 200;
+    const MAX_SCHEDULE_ITEMS = 50; // Will be split between past and future
+    const MAX_EXPENSE_ITEMS = 100;
+    const MAX_DIARY_ENTRIES = 30;
+
+    // Prune contacts: send only name and group to reduce token size.
+    const liteContacts = contacts.slice(0, MAX_CONTACTS_LITE).map(c => ({ name: c.name, group: c.group }));
+
+    // Prune schedule: provide a mix of recent past and upcoming events.
+    const todayStr = new Date().toISOString().split('T')[0];
+    const pastSchedule = schedule.filter(s => s.date < todayStr).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()); // descending from recent past
+    const futureSchedule = schedule.filter(s => s.date >= todayStr).sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()); // ascending from today
+
+    const prunedSchedule = [
+        ...futureSchedule.slice(0, Math.ceil(MAX_SCHEDULE_ITEMS / 2)),
+        ...pastSchedule.slice(0, Math.floor(MAX_SCHEDULE_ITEMS / 2))
+    ];
+
+    // Prune expenses: sort by date descending and take the most recent items.
+    const sortedExpenses = [...expenses].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    const prunedExpenses = sortedExpenses.slice(0, MAX_EXPENSE_ITEMS);
+
+    // Prune diary: sort by date descending and take the most recent items.
+    const sortedDiary = [...diary].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    const prunedDiary = sortedDiary.slice(0, MAX_DIARY_ENTRIES);
+
+    return {
+        contacts: liteContacts,
+        schedule: prunedSchedule,
+        expenses: prunedExpenses,
+        diary: prunedDiary,
+    };
   };
 
   const handleSendMessage = async (text: string, image: File | null) => {
@@ -162,6 +202,13 @@ const App: React.FC = () => {
       role: 'user',
       text,
       imageUrl,
+    };
+
+    // This is the original input that will be logged to history
+    const userInputLog: HistoryItem['input'] = {
+        text,
+        imageName: image?.name || null,
+        imageUrl,
     };
     
     let currentSessionId = activeChatSessionId;
@@ -186,9 +233,28 @@ const App: React.FC = () => {
 
 
     try {
-      const contextData = { contacts, schedule, expenses, diary };
+      const contextData = getPrunedContextData();
       const result = await processChat(chatHistoryForApi, text, image, contextData);
       
+      // Handle clarification query from AI
+      if (result.clarificationNeeded) {
+        const modelMessage: ChatMessage = {
+            id: generateId(),
+            role: 'model',
+            text: result.answer,
+            clarificationOptions: result.clarificationOptions,
+        };
+        
+        // Don't save the user's clarification *reply* to history, save the original input.
+        // So if there's no pending input, this is the original ambiguous one.
+        if (!pendingClarificationInput) {
+            setPendingClarificationInput(userInputLog);
+        }
+        
+        setChatSessions(prev => prev.map(s => s.id === currentSessionId ? { ...s, messages: [...s.messages, modelMessage] } : s));
+        return; // Stop processing, wait for user's clarifying response
+      }
+
       let modelMessage: ChatMessage | null = null;
       if (result.answer) {
         modelMessage = {
@@ -218,20 +284,21 @@ const App: React.FC = () => {
 
       if (hasExtractedData) {
         const categorizedResult = addIdsToData(extractedData);
+        
+        // If there was a pending clarification, use its image for the result
+        const finalImageUrl = pendingClarificationInput?.imageUrl || imageUrl;
 
-        if (imageUrl && categorizedResult.expenses.length > 0) {
+        if (finalImageUrl && categorizedResult.expenses.length > 0) {
           categorizedResult.expenses.forEach(expense => {
-            expense.imageUrl = imageUrl;
+            expense.imageUrl = finalImageUrl;
           });
         }
         
-        const userInputLog: HistoryItem['input'] = {
-          text,
-          imageName: image?.name || null,
-          imageUrl,
-        };
+        // If this was a result of a clarification, use the original input for the history log.
+        const inputForHistory = pendingClarificationInput || userInputLog;
         
-        addDataToState(categorizedResult, userInputLog);
+        addDataToState(categorizedResult, inputForHistory);
+        setPendingClarificationInput(null); // Clear pending state after successful processing
       }
 
     } catch (e) {
@@ -248,6 +315,7 @@ const App: React.FC = () => {
         }
         return s;
       }));
+      setPendingClarificationInput(null); // Clear on error too
     } finally {
       setIsLoading(false);
     }
@@ -256,11 +324,13 @@ const App: React.FC = () => {
   const handleNewChat = () => {
     setActiveView('ALL');
     setActiveChatSessionId('new');
+    setPendingClarificationInput(null);
   };
 
   const handleSelectChat = (sessionId: string) => {
     setActiveView('ALL');
     setActiveChatSessionId(sessionId);
+     setPendingClarificationInput(null);
   };
 
 
@@ -283,7 +353,7 @@ const App: React.FC = () => {
       ...prev.filter(e => !conflictingOriginalIds.expenses.includes(e.id)), 
       ...categorizedResult.expenses
     ]);
-    setDiary(prev => [...prev, ...categorizedResult.diary]);
+    setDiary(prev => [...prev.filter(d => !categorizedResult.diary.some(nd => nd.id === d.id)), ...categorizedResult.diary]);
 
     setConflictData(null);
   };
@@ -308,25 +378,58 @@ const App: React.FC = () => {
   
   // CRUD Handlers for Contacts
   const handleAddContact = (contact: Omit<Contact, 'id'>) => {
-    const newContact = { ...contact, id: generateId() };
+    const newContact = { ...contact, id: generateId(), group: contact.group || '기타' };
     setContacts(prev => [newContact, ...prev]);
   };
 
   const handleUpdateContact = (updatedContact: Contact) => {
-    setContacts(prev => prev.map(c => (c.id === updatedContact.id ? updatedContact : c)));
+    setContacts(prev => prev.map(c => (c.id === updatedContact.id ? { ...updatedContact, group: updatedContact.group || '기타' } : c)));
   };
 
   const handleDeleteContact = (contactId: string) => {
     setContacts(prev => prev.filter(c => c.id !== contactId));
   };
 
+  // CRUD Handlers for Schedule
+  const handleAddSchedule = (item: Omit<ScheduleItem, 'id'>) => {
+    const newScheduleItem = { ...item, id: generateId() };
+    setSchedule(prev => [...prev, newScheduleItem].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime() || (a.time || '').localeCompare(b.time || '')));
+  };
+
+  const handleUpdateSchedule = (updatedItem: ScheduleItem) => {
+    setSchedule(prev => prev.map(s => (s.id === updatedItem.id ? updatedItem : s)));
+  };
+
+  const handleDeleteSchedule = (itemId: string) => {
+    setSchedule(prev => prev.filter(s => s.id !== itemId));
+  };
+
   // CRUD Handlers for Expenses
+  const handleAddExpense = (expense: Omit<Expense, 'id' | 'imageUrl'>) => {
+    const newExpense = { ...expense, id: generateId(), imageUrl: null };
+    setExpenses(prev => [...prev, newExpense].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
+  };
+
   const handleUpdateExpense = (updatedExpense: Expense) => {
     setExpenses(prev => prev.map(e => (e.id === updatedExpense.id ? updatedExpense : e)));
   };
 
   const handleDeleteExpense = (expenseId: string) => {
     setExpenses(prev => prev.filter(e => e.id !== expenseId));
+  };
+  
+  // CRUD Handlers for Diary
+  const handleAddDiary = (entry: Omit<DiaryEntry, 'id'>) => {
+    const newEntry = { ...entry, id: generateId(), group: entry.group || '기타' };
+    setDiary(prev => [newEntry, ...prev]);
+  };
+
+  const handleUpdateDiary = (updatedEntry: DiaryEntry) => {
+    setDiary(prev => prev.map(d => (d.id === updatedEntry.id ? { ...updatedEntry, group: updatedEntry.group || '기타' } : d)));
+  };
+
+  const handleDeleteDiary = (diaryId: string) => {
+    setDiary(prev => prev.filter(d => d.id !== diaryId));
   };
 
 
@@ -375,11 +478,25 @@ const App: React.FC = () => {
             break;
         case 'CALENDAR':
             title = '캘린더';
-            content = <CalendarView scheduleItems={schedule} />;
+            content = (
+              <CalendarView 
+                scheduleItems={schedule} 
+                onAdd={handleAddSchedule}
+                onUpdate={handleUpdateSchedule}
+                onDelete={handleDeleteSchedule}
+              />
+            );
             break;
         case 'EXPENSES_DASHBOARD':
             title = '가계부 대시보드';
-            content = <ExpensesCalendarView expenses={expenses} />;
+            content = (
+              <ExpensesCalendarView 
+                expenses={expenses} 
+                onAdd={handleAddExpense}
+                onUpdate={handleUpdateExpense}
+                onDelete={handleDeleteExpense}
+              />
+            );
             break;
         case 'EXPENSES_INCOME': {
             title = '수입 내역';
@@ -402,9 +519,9 @@ const App: React.FC = () => {
                                        (selectedIncomeMonth.getFullYear() === now.getFullYear() && selectedIncomeMonth.getMonth() >= now.getMonth());
 
             const filteredIncomeItems = incomeItems.filter(item => {
-                const itemDate = new Date(item.date);
-                return itemDate.getFullYear() === selectedIncomeMonth.getFullYear() &&
-                       itemDate.getMonth() === selectedIncomeMonth.getMonth();
+                const [year, month] = item.date.split('-').map(Number);
+                return year === selectedIncomeMonth.getFullYear() &&
+                       (month - 1) === selectedIncomeMonth.getMonth();
             }).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
             const totalIncomeForMonth = filteredIncomeItems.reduce((sum, expense) => sum + expense.amount, 0);
@@ -471,9 +588,9 @@ const App: React.FC = () => {
                                        (selectedExpenseMonth.getFullYear() === now.getFullYear() && selectedExpenseMonth.getMonth() >= now.getMonth());
 
             const filteredExpenseItems = expenseItems.filter(item => {
-                const itemDate = new Date(item.date);
-                return itemDate.getFullYear() === selectedExpenseMonth.getFullYear() &&
-                       itemDate.getMonth() === selectedExpenseMonth.getMonth();
+                const [year, month] = item.date.split('-').map(Number);
+                return year === selectedExpenseMonth.getFullYear() &&
+                       (month - 1) === selectedExpenseMonth.getMonth();
             }).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
             const totalExpenseForMonth = filteredExpenseItems.reduce((sum, expense) => sum + expense.amount, 0);
@@ -522,7 +639,7 @@ const App: React.FC = () => {
         }
         case 'EXPENSES_STATS':
             title = '가계부 통계';
-            content = <p className="text-gray-400 text-center mt-8">통계 기능은 곧 제공될 예정입니다.</p>;
+            content = <ExpensesStatsView expenses={expenses} />;
             break;
         case 'CONTACTS':
             title = '연락처';
@@ -534,8 +651,13 @@ const App: React.FC = () => {
                       />;
             break;
         case 'DIARY':
-            title = '기타 메모';
-            content = diary.length > 0 ? <DiaryList diaryEntries={diary} /> : <p className="text-gray-400 text-center mt-8">데이터가 없습니다.</p>;
+            title = '메모장';
+            content = <DiaryList 
+                        diaryEntries={diary} 
+                        onAdd={handleAddDiary}
+                        onUpdate={handleUpdateDiary}
+                        onDelete={handleDeleteDiary}
+                      />;
             break;
     }
      return (

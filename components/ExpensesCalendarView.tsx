@@ -1,13 +1,26 @@
 import React, { useState, useMemo } from 'react';
 import { Expense } from '../types';
 import { MonthYearPicker } from './MonthYearPicker';
+import { ExpenseDetailModal } from './ExpenseDetailModal';
 
 interface ExpensesCalendarViewProps {
   expenses: Expense[];
+  onAdd: (item: Omit<Expense, 'id' | 'imageUrl'>) => void;
+  onUpdate: (item: Expense) => void;
+  onDelete: (id: string) => void;
 }
 
-export const ExpensesCalendarView: React.FC<ExpensesCalendarViewProps> = ({ expenses }) => {
+const toYYYYMMDD = (d: Date): string => {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+};
+
+
+export const ExpensesCalendarView: React.FC<ExpensesCalendarViewProps> = ({ expenses, onAdd, onUpdate, onDelete }) => {
   const [currentDate, setCurrentDate] = useState(new Date());
+  const [selectedDate, setSelectedDate] = useState<Date | null>(null);
 
   const {
     totalMonthlyIncome,
@@ -16,9 +29,9 @@ export const ExpensesCalendarView: React.FC<ExpensesCalendarViewProps> = ({ expe
     days
   } = useMemo(() => {
     const expensesForMonth = expenses.filter(expense => {
-      const expenseDate = new Date(expense.date);
-      return expenseDate.getFullYear() === currentDate.getFullYear() &&
-             expenseDate.getMonth() === currentDate.getMonth();
+      const [year, month] = expense.date.split('-').map(Number);
+      return year === currentDate.getFullYear() &&
+             (month - 1) === currentDate.getMonth();
     });
 
     const totalMonthlyIncome = expensesForMonth
@@ -32,7 +45,7 @@ export const ExpensesCalendarView: React.FC<ExpensesCalendarViewProps> = ({ expe
     const netMonthlyTotal = totalMonthlyIncome - totalMonthlyExpense;
 
     const expensesByDay = expensesForMonth.reduce((acc, expense) => {
-      const day = new Date(expense.date).getDate();
+      const day = parseInt(expense.date.split('-')[2], 10);
       if (!acc[day]) acc[day] = [];
       acc[day].push(expense);
       return acc;
@@ -55,7 +68,11 @@ export const ExpensesCalendarView: React.FC<ExpensesCalendarViewProps> = ({ expe
       const isToday = new Date().toDateString() === dayDate.toDateString();
 
       dayElements.push(
-        <div key={i} className={`p-2 border border-gray-700/50 ${isToday ? 'bg-cyan-500/10' : ''} min-h-[100px] flex flex-col`}>
+        <button
+          key={i}
+          onClick={() => handleDayClick(i)}
+          className={`p-2 border border-gray-700/50 text-left align-top ${isToday ? 'bg-cyan-500/10' : ''} min-h-[100px] flex flex-col transition-colors hover:bg-gray-700/50 focus:outline-none focus:ring-2 focus:ring-cyan-500 z-10`}
+        >
           <div className={`font-bold text-right text-sm ${isToday ? 'text-cyan-300' : 'text-gray-300'}`}>{i}</div>
           <div className="mt-1 space-y-1 text-xs overflow-hidden">
             {totalIncome > 0 && (
@@ -69,7 +86,7 @@ export const ExpensesCalendarView: React.FC<ExpensesCalendarViewProps> = ({ expe
               </p>
             )}
           </div>
-        </div>
+        </button>
       );
     }
 
@@ -83,6 +100,14 @@ export const ExpensesCalendarView: React.FC<ExpensesCalendarViewProps> = ({ expe
   
   const handleDateSelect = (date: Date) => {
     setCurrentDate(date);
+  };
+  
+  const handleDayClick = (day: number) => {
+    setSelectedDate(new Date(currentDate.getFullYear(), currentDate.getMonth(), day));
+  };
+
+  const closeModal = () => {
+    setSelectedDate(null);
   };
   
   const now = new Date();
@@ -129,6 +154,16 @@ export const ExpensesCalendarView: React.FC<ExpensesCalendarViewProps> = ({ expe
           {days}
         </div>
       </div>
+      {selectedDate && (
+        <ExpenseDetailModal 
+            date={selectedDate}
+            items={expenses.filter(item => item.date === toYYYYMMDD(selectedDate))}
+            onClose={closeModal}
+            onAdd={onAdd}
+            onUpdate={onUpdate}
+            onDelete={onDelete}
+        />
+      )}
     </section>
   );
 };

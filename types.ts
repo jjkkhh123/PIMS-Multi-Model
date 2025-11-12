@@ -3,6 +3,7 @@ export interface Contact {
   name: string;
   phone?: string;
   email?: string;
+  group?: string;
 }
 
 export interface ScheduleItem {
@@ -27,6 +28,7 @@ export interface DiaryEntry {
   id: string;
   date: string;
   entry: string;
+  group?: string;
 }
 
 // Type for the different views in the app
@@ -63,6 +65,7 @@ export interface ChatMessage {
   role: 'user' | 'model';
   text: string;
   imageUrl?: string | null;
+  clarificationOptions?: string[];
 }
 
 export interface ChatSession {
@@ -74,4 +77,6 @@ export interface ChatSession {
 export interface ConversationalResponse {
   answer: string;
   dataExtraction: ProcessedData;
+  clarificationNeeded?: boolean;
+  clarificationOptions?: string[];
 }

@@ -1,9 +1,9 @@
 import React from 'react';
 import { HistoryItem } from '../types';
-import { ContactsList } from './ContactsList';
 import { ScheduleList } from './ScheduleList';
 import { ExpensesList } from './ExpensesList';
 import { DiaryList } from './DiaryList';
+import { ContactIcon, ScheduleIcon, ExpenseIcon, DiaryIcon, PhoneIcon, EmailIcon } from './icons.tsx';
 
 interface HistoryDetailModalProps {
   item: HistoryItem;
@@ -58,13 +58,50 @@ export const HistoryDetailModal: React.FC<HistoryDetailModalProps> = ({ item, on
              <div className="bg-gray-900/50 p-4 rounded-lg">
                 {hasOutput ? (
                     <div className="space-y-6">
-                        <ContactsList 
-                          contacts={item.output.contacts}
-                          readOnly={true}
-                        />
-                        <ScheduleList scheduleItems={item.output.schedule} />
-                        <ExpensesList expenses={item.output.expenses} />
-                        <DiaryList diaryEntries={item.output.diary} />
+                        {item.output.contacts.length > 0 && (
+                            <section>
+                                <h4 className="text-md font-semibold flex items-center gap-2 text-cyan-300 mb-2">
+                                    <ContactIcon className="h-5 w-5" />
+                                    연락처
+                                </h4>
+                                <div className="space-y-2">
+                                    {item.output.contacts.map(contact => (
+                                        <div key={contact.id} className="p-3 bg-gray-700/50 rounded-lg">
+                                            <p className="font-bold text-white">{contact.name}</p>
+                                            {contact.phone && <p className="text-sm text-gray-300 flex items-center gap-2 mt-1"><PhoneIcon className="h-4 w-4" />{contact.phone}</p>}
+                                            {contact.email && <p className="text-sm text-gray-300 flex items-center gap-2 mt-1"><EmailIcon className="h-4 w-4" />{contact.email}</p>}
+                                        </div>
+                                    ))}
+                                </div>
+                            </section>
+                        )}
+                        {item.output.schedule.length > 0 && (
+                            <section>
+                                <h4 className="text-md font-semibold flex items-center gap-2 text-cyan-300 mb-2">
+                                    <ScheduleIcon className="h-5 w-5" />
+                                    일정
+                                </h4>
+                                <ScheduleList scheduleItems={item.output.schedule} showTitle={false} />
+                            </section>
+                        )}
+                        {item.output.expenses.length > 0 && (
+                            <section>
+                                <h4 className="text-md font-semibold flex items-center gap-2 text-cyan-300 mb-2">
+                                    <ExpenseIcon className="h-5 w-5" />
+                                    수입/지출
+                                </h4>
+                                <ExpensesList expenses={item.output.expenses} />
+                            </section>
+                        )}
+                        {item.output.diary.length > 0 && (
+                           <section>
+                                <h4 className="text-md font-semibold flex items-center gap-2 text-cyan-300 mb-2">
+                                    <DiaryIcon className="h-5 w-5" />
+                                    메모장
+                                </h4>
+                               <DiaryList diaryEntries={item.output.diary} />
+                           </section>
+                        )}
                     </div>
                 ) : (
                     <p className="text-gray-400 text-center py-4">분류된 데이터가 없습니다.</p>

@@ -2,13 +2,33 @@ import React, { useState } from 'react';
 import { ScheduleItem } from '../types.ts';
 import { ClockIcon } from './icons.tsx';
 import { MonthYearPicker } from './MonthYearPicker.tsx';
+import { ScheduleDetailModal } from './ScheduleDetailModal.tsx';
 
 interface CalendarViewProps {
   scheduleItems: ScheduleItem[];
+  onAdd: (item: Omit<ScheduleItem, 'id'>) => void;
+  onUpdate: (item: ScheduleItem) => void;
+  onDelete: (id: string) => void;
 }
 
-export const CalendarView: React.FC<CalendarViewProps> = ({ scheduleItems }) => {
+const toYYYYMMDD = (d: Date): string => {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+};
+
+export const CalendarView: React.FC<CalendarViewProps> = ({ scheduleItems, onAdd, onUpdate, onDelete }) => {
   const [currentDate, setCurrentDate] = useState(new Date());
+  const [selectedDate, setSelectedDate] = useState<Date | null>(null);
+
+  const handleDayClick = (day: number) => {
+    setSelectedDate(new Date(currentDate.getFullYear(), currentDate.getMonth(), day));
+  };
+
+  const closeModal = () => {
+    setSelectedDate(null);
+  };
 
   const startOfMonth = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1);
   const endOfMonth = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0);
@@ -21,15 +41,19 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ scheduleItems }) => 
   }
   for (let i = 1; i <= daysInMonth; i++) {
     const dayDate = new Date(currentDate.getFullYear(), currentDate.getMonth(), i);
-    const dateString = dayDate.toISOString().split('T')[0];
+    const dateString = toYYYYMMDD(dayDate);
     const itemsForDay = scheduleItems.filter(item => item.date === dateString);
     const isToday = new Date().toDateString() === dayDate.toDateString();
 
     days.push(
-      <div key={i} className={`p-2 border border-gray-700/50 ${isToday ? 'bg-cyan-500/10' : ''} min-h-[100px]`}>
+      <button
+        key={i}
+        onClick={() => handleDayClick(i)}
+        className={`p-2 border border-gray-700/50 text-left align-top ${isToday ? 'bg-cyan-500/10' : ''} min-h-[120px] transition-colors hover:bg-gray-700/50 focus:outline-none focus:ring-2 focus:ring-cyan-500 z-10`}
+      >
         <div className={`font-bold text-right ${isToday ? 'text-cyan-300' : 'text-gray-300'}`}>{i}</div>
         <div className="mt-1 space-y-1">
-          {itemsForDay.map(item => (
+          {itemsForDay.slice(0, 3).map(item => (
             <div key={item.id} className="bg-gray-600/50 p-1.5 rounded text-xs">
               <p className="font-semibold text-white truncate">{item.title}</p>
                <div className="flex items-center gap-1 text-gray-400 truncate">
@@ -38,8 +62,11 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ scheduleItems }) => 
               </div>
             </div>
           ))}
+          {itemsForDay.length > 3 && (
+            <div className="text-xs text-gray-400 text-center mt-1">...외 {itemsForDay.length - 3}개</div>
+          )}
         </div>
-      </div>
+      </button>
     );
   }
 
@@ -70,6 +97,16 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ scheduleItems }) => 
        <div className="grid grid-cols-7">
         {days}
       </div>
+      {selectedDate && (
+        <ScheduleDetailModal 
+            date={selectedDate}
+            items={scheduleItems.filter(item => item.date === toYYYYMMDD(selectedDate))}
+            onClose={closeModal}
+            onAdd={onAdd}
+            onUpdate={onUpdate}
+            onDelete={onDelete}
+        />
+      )}
     </section>
   );
 };

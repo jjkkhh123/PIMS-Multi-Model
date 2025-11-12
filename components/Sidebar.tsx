@@ -43,7 +43,7 @@ const menuItems: readonly MenuItem[] = [
       { id: 'CONTACTS', label: '연락처', icon: ContactIcon },
     ],
   },
-  { id: 'DIARY', label: '기타 메모', icon: DiaryIcon },
+  { id: 'DIARY', label: '메모장', icon: DiaryIcon },
 ];
 
 

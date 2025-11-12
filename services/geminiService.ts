@@ -4,13 +4,21 @@ import type { ProcessedData, ConversationalResponse, Contact, ScheduleItem, Expe
 // Do not overuse this. The user is in Korea.
 const getSystemInstruction = (contextData: object) => `You are an intelligent personal assistant, LifeOS. Your task is to analyze the user's input (text and/or images) and their existing data to provide a helpful response. The user is Korean. Today's date is ${new Date().toISOString().split('T')[0]}.
 
-You have two main capabilities:
+You have four main capabilities:
 1.  **Answering Questions:** If the user asks a question about their stored data (provided below under 'Existing User Data'), analyze the data and provide a clear, concise answer in Korean.
-2.  **Data Extraction:** If the user provides new information (e.g., a note, a receipt, a business card, a schedule), extract it and structure it according to the JSON schema. For each transaction, clearly distinguish between 'income' (수입) and 'expense' (지출) and set the 'type' field accordingly. If it is ambiguous, default to 'expense'. For income, common categories are '급여', '용돈', '부수입', '기타'. For expenses, common categories are '식비', '교통', '쇼핑', '기타'.
+2.  **Data Extraction:** If the user provides new information (e.g., a note, a receipt, a business card, a schedule), extract it and structure it according to the JSON schema.
+    -   **Diary/Memos:** Diary entries can be grouped. The default groups are "To-do list" and "기타" (Miscellaneous).
+    -   **Transaction Type:** For each transaction, clearly distinguish between 'income' (수입) and 'expense' (지출) and set the 'type' field accordingly. If it is ambiguous, default to 'expense'. For income, common categories are '급여', '용돈', '부수입', '기타'. For expenses, common categories are '식비', '교통', '쇼핑', '기타'.
+    -   **Contact Groups:** For each contact, assign a group (e.g., '가족', '친구', '직장'). Default to '기타' if uncertain.
+3.  **Clarification for Tasks:** If the user's input is a task, goal, or to-do item (e.g., 'Finish chapter 1 of the book by tomorrow', '정보처리기사 1단원 끝내기'), you MUST ask for clarification. The clarification question in the 'answer' field should be "이 내용을 어디에 저장할까요?" (Where should I save this content?), set 'clarificationNeeded' to true, and provide 'clarificationOptions' as an array: ["To-do list", "메모", "일정"].
+4.  **Handling Clarification Responses:** If the user's latest input is a direct response to a clarification question you just asked (e.g., they reply with "To-do list"), you must categorize their *previous* input according to their choice.
+    -   If they choose "To-do list", create a diary entry from their previous message and assign it to the "To-do list" group.
+    -   If they choose "메모", create a diary entry and assign it to the "기타" group.
+    -   If they choose "일정", create a schedule item.
 
-Your response MUST be a JSON object with two fields: 'answer' and 'dataExtraction'.
--   'answer': A string containing your natural language response to the user. If you are only extracting data, you can provide a simple confirmation message like "저장되었습니다." (Saved.) or leave it empty if no response is needed.
--   'dataExtraction': An object containing arrays for 'contacts', 'schedule', 'expenses', and 'diary'. If you are only answering a question, this object's arrays should be empty.
+Your response MUST be a JSON object.
+-   If you are answering or extracting data directly, the JSON should contain 'answer' and 'dataExtraction'.
+-   If you need clarification, the JSON should contain 'answer', 'clarificationNeeded', and 'clarificationOptions'.
 
 ---
 Existing User Data:
@@ -24,7 +32,16 @@ const schema = {
   properties: {
     answer: {
         type: Type.STRING,
-        description: "A natural language response to the user's query in Korean. Provide a confirmation if data was extracted, or a direct answer if a question was asked."
+        description: "A natural language response to the user's query in Korean. Provide a confirmation if data was extracted, a direct answer if a question was asked, or a clarifying question if the input is ambiguous."
+    },
+    clarificationNeeded: {
+        type: Type.BOOLEAN,
+        description: "Set to true if the user's input is ambiguous and requires a follow-up question."
+    },
+    clarificationOptions: {
+        type: Type.ARRAY,
+        description: "If clarification is needed, provide suggested short reply options for the user, like ['일정', '메모'].",
+        items: { type: Type.STRING }
     },
     dataExtraction: {
       type: Type.OBJECT,
@@ -38,6 +55,7 @@ const schema = {
               name: { type: Type.STRING, description: "Full name of the person." },
               phone: { type: Type.STRING, description: "Phone number." },
               email: { type: Type.STRING, description: "Email address." },
+              group: { type: Type.STRING, description: "The group the contact belongs to, e.g., '가족', '친구', '직장'. Defaults to '기타'." },
             },
             required: ["name"],
           },
@@ -79,6 +97,7 @@ const schema = {
             properties: {
               date: { type: Type.STRING, description: "Date of the entry in YYYY-MM-DD format. Use today's date if not specified." },
               entry: { type: Type.STRING, description: "The content of the note or diary entry." },
+              group: { type: Type.STRING, description: "The group the diary entry belongs to, e.g., 'To-do list', '기타'. Defaults to '기타'." },
             },
             required: ["date", "entry"],
           },
@@ -108,7 +127,7 @@ export const processChat = async (
   text: string, 
   image: File | null,
   contextData: {
-    contacts: Contact[],
+    contacts: Partial<Contact>[],
     schedule: ScheduleItem[],
     expenses: Expense[],
     diary: DiaryEntry[],
@@ -156,11 +175,12 @@ export const processChat = async (
     const data = JSON.parse(jsonText) as ConversationalResponse;
     
     // Validate the structure of the returned data to prevent runtime errors.
-    // Fix: Explicitly type `extraction` to handle cases where `data.dataExtraction` is null or properties are missing from the API response.
     const extraction: Partial<ProcessedData> = data.dataExtraction || {};
 
     return {
         answer: data.answer || '',
+        clarificationNeeded: data.clarificationNeeded || false,
+        clarificationOptions: data.clarificationOptions || [],
         dataExtraction: {
           contacts: extraction.contacts || [],
           schedule: extraction.schedule || [],
