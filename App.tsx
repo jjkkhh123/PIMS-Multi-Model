@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { processChat } from './services/geminiService';
@@ -571,12 +572,10 @@ const App: React.FC = () => {
       );
     }
 
-    let title = '';
     let content: React.ReactNode = null;
 
     switch(activeView) {
         case 'HISTORY':
-            title = '처리 내역';
             content = (
               <>
                 {error && <div className="text-red-400 bg-red-900/50 p-3 rounded-md mb-4">{error}</div>}
@@ -597,7 +596,6 @@ const App: React.FC = () => {
             );
             break;
         case 'CALENDAR':
-            title = '캘린더';
             content = (
               <CalendarView 
                 scheduleItems={schedule} 
@@ -608,7 +606,6 @@ const App: React.FC = () => {
             );
             break;
         case 'EXPENSES_DASHBOARD':
-            title = '가계부 대시보드';
             content = (
               <ExpensesCalendarView 
                 expenses={expenses} 
@@ -619,7 +616,6 @@ const App: React.FC = () => {
             );
             break;
         case 'EXPENSES_INCOME': {
-            title = '수입 내역';
             const incomeItems = expenses.filter(e => e.type === 'income');
             
             const handleIncomeMonthChange = (offset: number) => {
@@ -688,7 +684,6 @@ const App: React.FC = () => {
             break;
         }
         case 'EXPENSES_EXPENSE': {
-            title = '지출 내역';
             const expenseItems = expenses.filter(e => e.type === 'expense');
             
             const handleExpenseMonthChange = (offset: number) => {
@@ -758,11 +753,9 @@ const App: React.FC = () => {
             break;
         }
         case 'EXPENSES_STATS':
-            title = '가계부 통계';
             content = <ExpensesStatsView expenses={expenses} />;
             break;
         case 'CONTACTS':
-            title = '연락처';
             content = <ContactsList 
                         contacts={contacts} 
                         onAdd={handleAddContact}
@@ -771,7 +764,6 @@ const App: React.FC = () => {
                       />;
             break;
         case 'DIARY':
-            title = '메모장';
             content = <DiaryList 
                         diaryEntries={diary} 
                         onAdd={handleAddDiary}
@@ -781,12 +773,9 @@ const App: React.FC = () => {
             break;
     }
      return (
-        <div className="flex-grow p-6 h-full">
-            <div className="h-full flex flex-col bg-gray-900/50 p-6 rounded-lg shadow-lg">
-                <h1 className="text-2xl font-bold mb-4 text-cyan-400">{title}</h1>
-                <div className="flex-grow overflow-y-auto pr-2 min-h-0">
-                    {content}
-                </div>
+        <div className="h-full flex flex-col bg-gray-900/50 p-6 rounded-lg shadow-lg">
+            <div className="flex-grow overflow-y-auto pr-2 min-h-0">
+                {content}
             </div>
         </div>
     );
@@ -808,6 +797,7 @@ const App: React.FC = () => {
 
   const sidebarComponent = (
     <Sidebar 
+      isOpen={isSidebarOpen}
       activeView={activeView} 
       onViewChange={handleSidebarViewChange}
       chatSessions={chatSessions}
@@ -819,27 +809,47 @@ const App: React.FC = () => {
     />
   );
 
-  const hamburgerButton = (
-    <button 
-      onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-      className="absolute top-6 left-6 text-gray-400 hover:text-white z-30 p-2 rounded-md hover:bg-gray-700/50"
-      aria-label="Toggle sidebar"
-    >
-      <MenuIcon className="h-6 w-6" />
-    </button>
-  );
+  let currentTitle = '';
+    if (activeView === 'ALL') {
+      if (activeChatSessionId === 'new') {
+        currentTitle = "새 대화";
+      } else {
+        currentTitle = chatSessions.find(s => s.id === activeChatSessionId)?.title || "대화";
+      }
+    } else {
+      const viewTitles: Record<string, string> = {
+        HISTORY: '처리 내역',
+        CALENDAR: '캘린더',
+        EXPENSES_DASHBOARD: '가계부 대시보드',
+        EXPENSES_INCOME: '수입 내역',
+        EXPENSES_EXPENSE: '지출 내역',
+        EXPENSES_STATS: '가계부 통계',
+        CONTACTS: '연락처',
+        DIARY: '메모장',
+      };
+      currentTitle = viewTitles[activeView] || '';
+    }
 
 
   if (!hasInteracted) {
     const messagesToShow: ChatMessage[] = [];
+    const hamburgerButton = (
+      <button 
+        onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+        className="absolute top-6 left-6 text-gray-400 hover:text-white z-30 p-2 rounded-md hover:bg-gray-700/50"
+        aria-label="Toggle sidebar"
+      >
+        <MenuIcon className="h-6 w-6" />
+      </button>
+    );
     
     return (
-      <div className="bg-gray-800 text-gray-100 font-sans h-screen flex">
-        {isSidebarOpen && sidebarComponent}
-        <div className="relative flex-grow h-full flex flex-col items-center justify-end p-4">
+      <div className="bg-gray-800 text-gray-100 font-sans h-screen flex relative overflow-x-hidden">
+        {sidebarComponent}
+        <div className={`relative flex-grow h-full flex flex-col items-center justify-end p-4 transition-all duration-1000 ease-in-out ${isSidebarOpen ? 'ml-64' : 'ml-0'}`}>
           {hamburgerButton}
           <div className="flex-grow flex items-center justify-center">
-            <h1 className="text-6xl md:text-7xl font-bold text-white tracking-wider">LifeOS</h1>
+            <h1 className="text-6xl md:text-7xl font-bold text-white tracking-wider animate-fade-in">LifeOS</h1>
           </div>
           <div className="w-full max-w-3xl">
             <ChatInterface 
@@ -855,7 +865,7 @@ const App: React.FC = () => {
   }
 
   return (
-    <div className="bg-gray-800 text-gray-100 font-sans h-screen flex">
+    <div className="bg-gray-800 text-gray-100 font-sans h-screen flex relative overflow-x-hidden">
       <input
         type="file"
         ref={importFileRef}
@@ -863,10 +873,29 @@ const App: React.FC = () => {
         className="hidden"
         accept="application/json"
       />
-      {isSidebarOpen && sidebarComponent}
-      <main className="relative flex-grow h-full">
-        {hamburgerButton}
-        {renderContent()}
+      {sidebarComponent}
+      <main className={`relative flex-grow h-full flex flex-col transition-all duration-1000 ease-in-out ${isSidebarOpen ? 'ml-64' : 'ml-0'}`}>
+        <header className="flex-shrink-0 flex items-center p-6 h-20">
+          <button 
+            onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+            className="text-gray-400 hover:text-white z-30 p-2 rounded-md hover:bg-gray-700/50"
+            aria-label="Toggle sidebar"
+          >
+            <MenuIcon className="h-6 w-6" />
+          </button>
+          <h1 className="text-2xl font-bold ml-4 text-cyan-400 truncate pr-4">{currentTitle}</h1>
+        </header>
+        
+        {activeView === 'ALL' ? (
+          <div className="flex-grow h-[calc(100%-5rem)]">
+            {renderContent()}
+          </div>
+        ) : (
+          <div className="flex-grow px-6 pb-6 h-[calc(100%-5rem)]">
+            {renderContent()}
+          </div>
+        )}
+
       </main>
       {selectedHistoryItem && (
         <HistoryDetailModal 

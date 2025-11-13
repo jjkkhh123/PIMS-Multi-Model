@@ -3,6 +3,7 @@ import { View, ChatSession } from '../types';
 import { HomeIcon, CalendarIcon, ExpenseIcon, ContactIcon, DiaryIcon, HistoryIcon, AppIcon, ChevronRightIcon, TransactionIcon, StatsIcon, AddIcon, ImportIcon, ExportIcon } from './icons';
 
 interface SidebarProps {
+  isOpen: boolean;
   activeView: View;
   onViewChange: (view: View) => void;
   chatSessions: ChatSession[];
@@ -50,6 +51,7 @@ const menuItems: readonly MenuItem[] = [
 
 
 export const Sidebar: React.FC<SidebarProps> = ({ 
+  isOpen,
   activeView, 
   onViewChange, 
   chatSessions, 
@@ -167,7 +169,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
 
   return (
-    <aside className="w-64 bg-gray-900/50 p-4 flex flex-col flex-shrink-0">
+    <aside className={`w-64 bg-gray-900/50 p-4 flex flex-col flex-shrink-0 absolute top-0 left-0 h-full z-40 sidebar-transition ${isOpen ? 'sidebar-open' : 'sidebar-closed'}`}>
       <div className="px-2 mb-8">
         <button
           onClick={onNewChat}

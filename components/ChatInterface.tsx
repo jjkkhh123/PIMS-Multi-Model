@@ -1,3 +1,4 @@
+
 import React, { useState, useRef, useEffect } from 'react';
 import type { ChatMessage } from '../types';
 import { UploadIcon, MicIcon, SendIcon, MenuIcon } from './icons';
@@ -292,7 +293,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ messages, onSendMe
   }
 
   return (
-    <div className="flex flex-col h-full bg-gray-900/50 pt-16">
+    <div className="flex flex-col h-full bg-gray-900/50">
       {messageList}
       {formArea}
     </div>
