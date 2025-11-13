@@ -66,6 +66,7 @@ export interface ChatMessage {
   text: string;
   imageUrl?: string | null;
   clarificationOptions?: string[];
+  isQuote?: boolean;
 }
 
 export interface ChatSession {

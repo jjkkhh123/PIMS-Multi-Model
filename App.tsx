@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { processChat } from './services/geminiService';
 import type { ProcessedData, CategorizedData, HistoryItem, View, Expense, Contact, ScheduleItem, DiaryEntry, ChatMessage, ChatSession } from './types';
@@ -14,19 +14,38 @@ import { MonthYearPicker } from './components/MonthYearPicker';
 import { ExpensesCalendarView } from './components/ExpensesCalendarView';
 import { ChatInterface } from './components/ChatInterface';
 import { ExpensesStatsView } from './components/ExpensesStatsView';
+import { MenuIcon } from './components/icons';
 
 // A simple ID generator
 const generateId = () => Math.random().toString(36).substring(2, 9);
 
+const LOCAL_STORAGE_KEY = 'lifeos-app-state';
+
+const getInitialState = () => {
+  try {
+    const item = localStorage.getItem(LOCAL_STORAGE_KEY);
+    return item ? JSON.parse(item) : {};
+  } catch (error) {
+    console.error("Error reading from local storage", error);
+    return {};
+  }
+};
+
 const App: React.FC = () => {
-  const [history, setHistory] = useState<HistoryItem[]>([]);
-  const [contacts, setContacts] = useState<Contact[]>([]);
-  const [schedule, setSchedule] = useState<ScheduleItem[]>([]);
-  const [expenses, setExpenses] = useState<Expense[]>([]);
-  const [diary, setDiary] = useState<DiaryEntry[]>([]);
+  const initialStateRef = useRef(getInitialState());
+  const initialState = initialStateRef.current;
+  const importFileRef = useRef<HTMLInputElement>(null);
+
+  const [hasInteracted, setHasInteracted] = useState(initialState.hasInteracted || false);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [history, setHistory] = useState<HistoryItem[]>(initialState.history || []);
+  const [contacts, setContacts] = useState<Contact[]>(initialState.contacts || []);
+  const [schedule, setSchedule] = useState<ScheduleItem[]>(initialState.schedule || []);
+  const [expenses, setExpenses] = useState<Expense[]>(initialState.expenses || []);
+  const [diary, setDiary] = useState<DiaryEntry[]>(initialState.diary || []);
   
-  const [chatSessions, setChatSessions] = useState<ChatSession[]>([]);
-  const [activeChatSessionId, setActiveChatSessionId] = useState<string | 'new'>('new');
+  const [chatSessions, setChatSessions] = useState<ChatSession[]>(initialState.chatSessions || []);
+  const [activeChatSessionId, setActiveChatSessionId] = useState<string | 'new'>(initialState.activeChatSessionId || 'new');
   
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -55,13 +74,25 @@ const App: React.FC = () => {
     newHistoryItem: HistoryItem;
   } | null>(null);
 
-  const initialMessages: ChatMessage[] = [
-    {
-      id: generateId(),
-      role: 'model',
-      text: '안녕하세요! LifeOS입니다. 무엇을 도와드릴까요? 일정, 메모, 연락처, 가계부 내역 등을 말씀해주세요. 또는 "이번 달 지출 내역 보여줘" 와 같이 질문할 수도 있습니다.',
+  useEffect(() => {
+    try {
+      const stateToSave = {
+        hasInteracted,
+        history,
+        contacts,
+        schedule,
+        expenses,
+        diary,
+        chatSessions,
+        activeChatSessionId,
+      };
+      localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(stateToSave));
+    } catch (error) {
+      console.error("Error saving state to local storage", error);
     }
-  ];
+  }, [hasInteracted, history, contacts, schedule, expenses, diary, chatSessions, activeChatSessionId]);
+
+  const initialMessages: ChatMessage[] = [];
 
   const addIdsToData = (data: ProcessedData): CategorizedData => {
     return {
@@ -185,6 +216,9 @@ const App: React.FC = () => {
   };
 
   const handleSendMessage = async (text: string, image: File | null) => {
+    if (!hasInteracted) {
+      setHasInteracted(true);
+    }
     setIsLoading(true);
     setError(null);
 
@@ -322,6 +356,7 @@ const App: React.FC = () => {
   };
 
   const handleNewChat = () => {
+    setHasInteracted(false);
     setActiveView('ALL');
     setActiveChatSessionId('new');
     setPendingClarificationInput(null);
@@ -430,6 +465,91 @@ const App: React.FC = () => {
 
   const handleDeleteDiary = (diaryId: string) => {
     setDiary(prev => prev.filter(d => d.id !== diaryId));
+  };
+
+  const handleExportData = () => {
+    try {
+      const stateToSave = {
+        hasInteracted,
+        history,
+        contacts,
+        schedule,
+        expenses,
+        diary,
+        chatSessions,
+        activeChatSessionId,
+      };
+      const jsonString = `data:text/json;charset=utf-8,${encodeURIComponent(
+        JSON.stringify(stateToSave, null, 2)
+      )}`;
+      const link = document.createElement("a");
+      link.href = jsonString;
+      const date = new Date().toISOString().split('T')[0];
+      link.download = `lifeos_backup_${date}.json`;
+
+      link.click();
+    } catch (error) {
+      console.error("Failed to export data", error);
+      alert("데이터 내보내기에 실패했습니다.");
+    }
+  };
+
+  const handleImportClick = () => {
+    importFileRef.current?.click();
+  };
+
+  const handleImportData = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) {
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const text = e.target?.result;
+        if (typeof text !== 'string') {
+          throw new Error("File could not be read as text.");
+        }
+        const importedState = JSON.parse(text);
+
+        // Basic validation
+        if (
+          !importedState ||
+          !Array.isArray(importedState.contacts) ||
+          !Array.isArray(importedState.schedule) ||
+          !Array.isArray(importedState.expenses) ||
+          !Array.isArray(importedState.diary) ||
+          !Array.isArray(importedState.history) ||
+          !Array.isArray(importedState.chatSessions)
+        ) {
+          throw new Error("Invalid file format.");
+        }
+        
+        if (window.confirm("기존의 모든 데이터를 덮어쓰고 가져온 데이터로 교체하시겠습니까? 이 작업은 되돌릴 수 없습니다.")) {
+          setHasInteracted(importedState.hasInteracted ?? true);
+          setHistory(importedState.history ?? []);
+          setContacts(importedState.contacts ?? []);
+          setSchedule(importedState.schedule ?? []);
+          setExpenses(importedState.expenses ?? []);
+          setDiary(importedState.diary ?? []);
+          setChatSessions(importedState.chatSessions ?? []);
+          setActiveChatSessionId(importedState.activeChatSessionId ?? 'new');
+          
+          alert("데이터를 성공적으로 가져왔습니다.");
+        }
+
+      } catch (error) {
+        console.error("Failed to import data", error);
+        alert("데이터 가져오기에 실패했습니다. 파일이 올바른 형식인지 확인해주세요.");
+      } finally {
+        // Reset file input so the same file can be selected again
+        if(event.target) {
+            event.target.value = '';
+        }
+      }
+    };
+    reader.readAsText(file);
   };
 
 
@@ -671,18 +791,81 @@ const App: React.FC = () => {
         </div>
     );
   };
+  
+  const handleSidebarViewChange = (view: View) => {
+    setActiveView(view);
+    if (!hasInteracted) {
+      setHasInteracted(true);
+    }
+  };
+
+  const handleSidebarSelectChat = (sessionId: string) => {
+    handleSelectChat(sessionId);
+    if (!hasInteracted) {
+      setHasInteracted(true);
+    }
+  };
+
+  const sidebarComponent = (
+    <Sidebar 
+      activeView={activeView} 
+      onViewChange={handleSidebarViewChange}
+      chatSessions={chatSessions}
+      activeChatSessionId={activeChatSessionId}
+      onSelectChat={handleSidebarSelectChat}
+      onNewChat={handleNewChat}
+      onExport={handleExportData}
+      onImport={handleImportClick}
+    />
+  );
+
+  const hamburgerButton = (
+    <button 
+      onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+      className="absolute top-6 left-6 text-gray-400 hover:text-white z-30 p-2 rounded-md hover:bg-gray-700/50"
+      aria-label="Toggle sidebar"
+    >
+      <MenuIcon className="h-6 w-6" />
+    </button>
+  );
+
+
+  if (!hasInteracted) {
+    const messagesToShow: ChatMessage[] = [];
+    
+    return (
+      <div className="bg-gray-800 text-gray-100 font-sans h-screen flex">
+        {isSidebarOpen && sidebarComponent}
+        <div className="relative flex-grow h-full flex flex-col items-center justify-end p-4">
+          {hamburgerButton}
+          <div className="flex-grow flex items-center justify-center">
+            <h1 className="text-6xl md:text-7xl font-bold text-white tracking-wider">LifeOS</h1>
+          </div>
+          <div className="w-full max-w-3xl">
+            <ChatInterface 
+              messages={messagesToShow}
+              onSendMessage={handleSendMessage}
+              isLoading={isLoading}
+              isInitialView={true}
+            />
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="bg-gray-800 text-gray-100 font-sans h-screen flex">
-      <Sidebar 
-        activeView={activeView} 
-        onViewChange={setActiveView}
-        chatSessions={chatSessions}
-        activeChatSessionId={activeChatSessionId}
-        onSelectChat={handleSelectChat}
-        onNewChat={handleNewChat}
+      <input
+        type="file"
+        ref={importFileRef}
+        onChange={handleImportData}
+        className="hidden"
+        accept="application/json"
       />
-      <main className="flex-grow h-full">
+      {isSidebarOpen && sidebarComponent}
+      <main className="relative flex-grow h-full">
+        {hamburgerButton}
         {renderContent()}
       </main>
       {selectedHistoryItem && (

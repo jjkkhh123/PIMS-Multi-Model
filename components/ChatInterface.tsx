@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import type { ChatMessage } from '../types';
-import { UploadIcon, MicIcon, SendIcon } from './icons';
+import { UploadIcon, MicIcon, SendIcon, MenuIcon } from './icons';
 
 // FIX: Add type definitions for the Web Speech API to resolve "Cannot find name 'SpeechRecognition'" error.
 interface SpeechRecognitionAlternative {
@@ -47,6 +47,7 @@ interface ChatInterfaceProps {
   messages: ChatMessage[];
   onSendMessage: (text: string, image: File | null) => void;
   isLoading: boolean;
+  isInitialView?: boolean;
 }
 
 const TypingIndicator = () => (
@@ -57,7 +58,7 @@ const TypingIndicator = () => (
   </div>
 );
 
-export const ChatInterface: React.FC<ChatInterfaceProps> = ({ messages, onSendMessage, isLoading }) => {
+export const ChatInterface: React.FC<ChatInterfaceProps> = ({ messages, onSendMessage, isLoading, isInitialView = false }) => {
   const [text, setText] = useState('');
   const [image, setImage] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
@@ -166,38 +167,38 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ messages, onSendMe
     }
   };
 
-
-  return (
-    <div className="flex flex-col h-full bg-gray-900/50">
-      <header className="p-4 border-b border-gray-700 flex-shrink-0">
-        <h1 className="text-xl font-bold text-cyan-400">LifeOS Assistant</h1>
-      </header>
-      
-      <div className="flex-grow p-4 overflow-y-auto">
+  const messageList = (
+     <div className={`flex-grow p-4 overflow-y-auto ${isInitialView && messages.length === 1 && messages[0].isQuote ? 'flex flex-col justify-center' : ''}`}>
         <div className="space-y-4">
           {messages.map((msg) => (
-            <div key={msg.id} className={`flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'}`}>
-                <div className={`max-w-lg lg:max-w-xl p-3 rounded-lg ${msg.role === 'user' ? 'bg-cyan-700 text-white' : 'bg-gray-700 text-gray-200'}`}>
-                    {msg.imageUrl && (
-                        <img src={msg.imageUrl} alt="upload" className="rounded-md mb-2 max-w-xs" />
-                    )}
-                    <p className="whitespace-pre-wrap">{msg.text}</p>
-                </div>
-                 {msg.role === 'model' && msg.clarificationOptions && msg.clarificationOptions.length > 0 && (
-                    <div className="mt-2 flex gap-2 flex-wrap">
-                        {msg.clarificationOptions.map(option => (
-                            <button
-                                key={option}
-                                onClick={() => handleClarificationChoice(option)}
-                                disabled={isLoading}
-                                className="px-3 py-1.5 bg-gray-600 text-white rounded-full text-sm hover:bg-gray-500 disabled:opacity-50 disabled:cursor-wait"
-                            >
-                                {option}
-                            </button>
-                        ))}
-                    </div>
-                )}
-            </div>
+            msg.isQuote ? (
+              <div key={msg.id} className="flex justify-center text-center">
+                  <p className="text-xl italic text-gray-400">"{msg.text}"</p>
+              </div>
+            ) : (
+              <div key={msg.id} className={`flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'}`}>
+                  <div className={`max-w-lg lg:max-w-xl p-3 rounded-lg ${msg.role === 'user' ? 'bg-cyan-700 text-white' : 'bg-gray-700 text-gray-200'}`}>
+                      {msg.imageUrl && (
+                          <img src={msg.imageUrl} alt="upload" className="rounded-md mb-2 max-w-xs" />
+                      )}
+                      <p className="whitespace-pre-wrap">{msg.text}</p>
+                  </div>
+                   {msg.role === 'model' && msg.clarificationOptions && msg.clarificationOptions.length > 0 && (
+                      <div className="mt-2 flex gap-2 flex-wrap">
+                          {msg.clarificationOptions.map(option => (
+                              <button
+                                  key={option}
+                                  onClick={() => handleClarificationChoice(option)}
+                                  disabled={isLoading}
+                                  className="px-3 py-1.5 bg-gray-600 text-white rounded-full text-sm hover:bg-gray-500 disabled:opacity-50 disabled:cursor-wait"
+                              >
+                                  {option}
+                              </button>
+                          ))}
+                      </div>
+                  )}
+              </div>
+            )
           ))}
           {isLoading && (
             <div className="flex justify-start">
@@ -209,8 +210,10 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ messages, onSendMe
           <div ref={messagesEndRef} />
         </div>
       </div>
+  );
 
-      <div className="p-4 border-t border-gray-700 flex-shrink-0">
+  const formArea = (
+      <div className={`flex-shrink-0 ${!isInitialView ? 'p-4 border-t border-gray-700' : ''}`}>
         <form onSubmit={handleSubmit} className="relative">
           {imagePreview && (
             <div className="absolute bottom-full left-0 mb-2 p-2 bg-gray-800 rounded-lg">
@@ -277,6 +280,21 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ messages, onSendMe
           </div>
         </form>
       </div>
+  );
+
+  if (isInitialView) {
+    return (
+      <div className="flex flex-col">
+        {messages.length > 0 && messageList}
+        {formArea}
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col h-full bg-gray-900/50 pt-16">
+      {messageList}
+      {formArea}
     </div>
   );
 };
